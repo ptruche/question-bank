@@ -4,16 +4,144 @@ import numpy as np
 import json, os
 from datetime import datetime
 
-# ---------- Page & Style ----------
-st.set_page_config(page_title="Question Bank", page_icon="🧠", layout="wide")
+# =========================
+# OFFICIAL CATEGORY LIST
+# (kept in your chosen order)
+# =========================
+CATEGORIES_MASTER = [
+"Bronchoscopy",
+"Chest Wall Deformities: Pectus Excavatum/Carinatum, Marfan’s and Poland’s Syndromes",
+"Chylothorax",
+"Congenital Diaphragmatic Hernia",
+"Cystic Diseases of the Lung",
+"Cystic Fibrosis",
+"Cystic Pulmonary Airway Malformation",
+"Empyema",
+"Esophageal Atresia and Tracheoesophageal Fistula",
+"Esophageal Perforation",
+"Esophageal Replacement",
+"Esophageal Stenosis, Webs, Diverticuli",
+"Esophageal Stricture: Caustic Ingestion and Other Causes",
+"Esophagoscopy",
+"Eventration of the Diaphragm",
+"Gastroesophageal Reflux/Barrett's Esophagus",
+"Laryngomalacia",
+"Lobar Emphysema",
+"Mediastinal Cysts, Masses",
+"Patent Ductus Arteriosus",
+"Pneumothorax",
+"Prenatal Anomalies and Therapy",
+"Pulmonary Abscess",
+"Pulmonary Hypoplasia/Hypertension",
+"Pulmonary Sequestration",
+"Subacute Bacterial Endocarditis Prophylaxis",
+"Tracheobronchial Foreign Bodies",
+"Tracheomalacia",
+"Vascular Ring and Pulmonary Artery Sling",
+"Abdominal Pain",
+"Alimentary Tract Duplications",
+"Appendicitis",
+"Ascites: Chylous",
+"Biliary Atresia",
+"Choledochal Cysts",
+"Cloacal Exstrophy/Bladder Exstrophy",
+"Duodenal Atresia/Stenosis/Webs/Annular Pancreas",
+"Gallbladder Disease, Gallstones",
+"Gastric Volvulus",
+"Gastrointestinal Bleeding",
+"Gastroschisis",
+"Hepatic Infections: Hepatitis, Abscess, Cysts",
+"Hirschsprung Disease",
+"Hypertrophic Pyloric Stenosis",
+"Inflammatory Bowel Disease",
+"Inguinal Hernia",
+"Intestinal Atresia",
+"Intussusception",
+"Malrotation",
+"Meconium Ileus/Peritonitis/Plug",
+"Mesenteric and Omental Cysts",
+"Necrotizing Enterocolitis",
+"Neonatal Gastric Perforation",
+"Neonatal Obstruction",
+"Omphalocele",
+"Omphalomesenteric Duct Remnants, Urachus, and Meckel's",
+"Peptic Ulcer Disease",
+"Polyps",
+"Portal Hypertension",
+"Umbilical Hernia and Other Umbilical Disorders",
+"Adrenal Cortical Tumors, Pheochromocytoma",
+"Anal Pathology: Fissures, Abscesses, Fistulae, Pilonidal, Prolapse",
+"Anorectal Malformation",
+"Arterial Diseases and Vasculitis",
+"Branchial Cleft, Arch Anomalies",
+"Breast Disorders",
+"Circumcision and Abnormalities of the Urethra, Penis, Scrotum",
+"Disorders of Sexual Development",
+"Endocrine Diseases",
+"Lymphadenopathy, Atypical Mycobacteria",
+"Neurological: Shunt Complications, Dermal Sinuses",
+"Ovarian Torsion, Cysts, and Tumors",
+"Renal Diseases: Nephrotic Syndrome, DI, Renal Vein Thrombosis,\nChronic Failure, Prune Belly Syndrome",
+"Thyroglossal Duct Cyst/Sinus",
+"Thyroid Nodules",
+"Torsions: Appendix Testes, Testicular",
+"Torticollis",
+"Undescended Testicle (Cryptorchidism)",
+"Vaginal Atresia, Hydrometrocolpos",
+"Vascular Anomalies",
+"Abdominal Trauma",
+"Acute Renal Failure",
+"ARDS",
+"Burns: Resuscitation, Airway, Electrical, Nutrition, Wound, Sepsis",
+"Cardiovascular Trauma: Tamponade, Contusion, Arch Disruption, Peripheral Vascular\nInjuries",
+"Coagulation",
+"Extracorporeal Life Support",
+"Fluids and Electrolytes",
+"Hematologic Diseases: Spherocytosis, Sickle Cell, ITP, HSP",
+"Lung Physiology, Pathophysiology, Ventilators, Pneumonia",
+"Musculoskeletal Trauma: Pelvis, Long Bone",
+"Neonatal Physiology and Pathophysiology: Transition from Fetal Circulation,\nCardiovascular Monitoring, Shock",
+"Neurosurgical Trauma",
+"Nonaccidental Injuries: Diagnosis, Evaluation, Legal Issues",
+"Nutrition",
+"Obesity",
+"Pediatric Anesthesia and Pain Management",
+"Short Bowel Syndrome/Intestinal Failure",
+"Soft Tissue Trauma: Tetanus, Bites, Wound Infection, Crush Injuries",
+"Thoracic Trauma",
+"Transplantation",
+"Trauma: Initial Assessment and Resuscitation",
+"Abdominal Mass in the Newborn",
+"Adrenal Cancer",
+"Benign Liver Tumors: Hepatic Mesenchymal Hamartoma/Adenoma/FNH",
+"Bone Tumors: Osteogenic Sarcoma, Ewing Sarcoma",
+"Chemo/Radiation Therapy, Immunotherapy Concepts, Genetics",
+"Dermoid/Epidermoid Cysts, Soft Tissue Nodules",
+"Gastrointestinal Tumors",
+"Lung and Chest Wall Tumors",
+"Lymphoma/Leukemia",
+"Malignant Liver Tumors: Hepatoblastoma/Hepatocellular Carcinoma",
+"Mesoblastic Nephroma",
+"Neuroblastoma",
+"Nevi, Melanoma",
+"Ovarian and Adrexal Problems",
+"Rhabdomyosarcoma",
+"Splenic Diseases",
+"Teratoma",
+"Testicular Tumors",
+"Wilms Tumor, Renal Cell Carcinoma, and Hemihypertrophy"
+]
 
+# =========================
+# PAGE & STYLES
+# =========================
+st.set_page_config(page_title="Question Bank", page_icon="🧠", layout="wide")
 CUSTOM_CSS = """
 <style>
 .block-container {padding-top: 2rem; padding-bottom: 3rem;}
 h1.title {font-weight: 800; letter-spacing:-0.02em;}
 .card {
-  background: #ffffff;
-  border-radius: 18px;
+  background: #ffffff; border-radius: 18px;
   border: 1px solid rgba(17,24,39,0.06);
   box-shadow: 0 2px 12px rgba(2,6,23,0.05);
   padding: 1.25rem 1.25rem;
@@ -25,11 +153,8 @@ h1.title {font-weight: 800; letter-spacing:-0.02em;}
   border: 1px solid rgba(59, 130, 246, 0.25);
 }
 .stButton>button {
-  border-radius: 12px !important;
-  padding: .6rem 1rem !important;
-  font-weight: 600 !important;
-  border: 1px solid rgba(17,24,39,.06) !important;
-  box-shadow: 0 1px 6px rgba(2,6,23,.05) !important;
+  border-radius: 12px !important; padding: .6rem 1rem !important; font-weight: 600 !important;
+  border: 1px solid rgba(17,24,39,.06) !important; box-shadow: 0 1px 6px rgba(2,6,23,.05) !important;
 }
 .stRadio [role='radiogroup'] label {padding:.35rem .55rem; border-radius:10px;}
 .stRadio [role='radiogroup'] label:hover {background:#f3f4f6;}
@@ -38,12 +163,23 @@ h1.title {font-weight: 800; letter-spacing:-0.02em;}
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-# ---------- Constants ----------
 REQUIRED = ["Question","A","B","C","D","E","Correct","Explanation","Reference","Category","Difficulty"]
 PROGRESS_FILE = "progress.json"
 
-# ---------- Helpers ----------
+# =========================
+# HELPERS
+# =========================
+def _normalize_cat(s: str) -> str:
+    # normalize smart quotes/dashes and trim
+    return (
+        s.replace("’", "'")
+         .replace("–", "-")
+         .replace("\u00A0", " ")  # non-breaking space -> space
+         .strip()
+    )
+
 def load_dataframe(file):
+    # Load CSV/XLSX or sample
     if file is None:
         sample_path = os.path.join(os.path.dirname(__file__), "questions_sample.csv")
         if os.path.exists(sample_path):
@@ -57,14 +193,20 @@ def load_dataframe(file):
         else:
             df = pd.read_csv(file)
 
+    # Validate columns
     missing = [c for c in REQUIRED if c not in df.columns]
     if missing:
         st.error(f"Missing required columns: {missing}")
         return None
 
+    # Clean types/spaces
     df["Correct"] = df["Correct"].astype(str).str.strip().str.upper()
     for c in ["Question","A","B","C","D","E","Explanation","Reference","Category","Difficulty"]:
         df[c] = df[c].astype(str).fillna("").str.strip()
+
+    # Normalize categories for consistent matching
+    df["Category"] = df["Category"].apply(_normalize_cat)
+
     return df
 
 def init_state():
@@ -128,7 +270,9 @@ def load_progress():
         except Exception:
             pass
 
-# ---------- Sidebar ----------
+# =========================
+# SIDEBAR / LOADING
+# =========================
 init_state()
 st.sidebar.title("⚙️ Controls")
 
@@ -136,23 +280,38 @@ uploaded = st.sidebar.file_uploader("Upload CSV or Excel", type=["csv","xlsx","x
 if st.sidebar.button("Load / Reload", type="primary", use_container_width=True):
     st.session_state.df = load_dataframe(uploaded)
     if st.session_state.df is not None:
-        rebuild_indices()
-        persist_progress()
+        # Warn on non-standard categories
+        unknown = sorted(set(st.session_state.df["Category"].dropna()) - set(CATEGORIES_MASTER))
+        if unknown:
+            st.warning(f"Unrecognized categories in your upload (check spelling/casing): {unknown}")
+        rebuild_indices(); persist_progress()
 
 if st.session_state.df is None:
     st.session_state.df = load_dataframe(uploaded)
     if st.session_state.df is not None and not st.session_state.indices:
-        load_progress()
-        rebuild_indices()
+        # Warn on non-standard categories
+        unknown = sorted(set(st.session_state.df["Category"].dropna()) - set(CATEGORIES_MASTER))
+        if unknown:
+            st.warning(f"Unrecognized categories in your upload (check spelling/casing): {unknown}")
+        load_progress(); rebuild_indices()
 
 if st.session_state.df is not None:
     df = st.session_state.df
-    cats = sorted(df["Category"].dropna().unique().tolist())
+
+    # Build Category filter from MASTER order but only include categories present in the file
+    present = set(df["Category"].dropna().unique().tolist())
+    cats = [c for c in CATEGORIES_MASTER if c in present]
+
+    # Difficulty filter (from data)
     diffs = sorted(df["Difficulty"].dropna().unique().tolist())
 
     with st.sidebar.expander("Filters", expanded=True):
-        st.session_state.filters["Category"] = st.multiselect("Category", cats, default=st.session_state.filters.get("Category", []))
-        st.session_state.filters["Difficulty"] = st.multiselect("Difficulty", diffs, default=st.session_state.filters.get("Difficulty", []))
+        st.session_state.filters["Category"] = st.multiselect(
+            "Category", cats, default=st.session_state.filters.get("Category", [])
+        )
+        st.session_state.filters["Difficulty"] = st.multiselect(
+            "Difficulty", diffs, default=st.session_state.filters.get("Difficulty", [])
+        )
         st.session_state.shuffle = st.toggle("Shuffle questions", value=st.session_state.shuffle)
 
         c1, c2 = st.columns(2)
@@ -188,11 +347,13 @@ if st.session_state.df is not None:
         else:
             st.sidebar.info("No answers to export yet.")
 
-# ---------- Main ----------
+# =========================
+# MAIN UI
+# =========================
 st.markdown("<h1 class='title'>🧠 Question Bank</h1>", unsafe_allow_html=True)
-st.caption("Clean UI • Explanations • Filters • Progress • Flags/Favorites")
+st.caption("Clean UI • Explanations • Filters • Progress • Flags/Favorites • Official categories")
 
-if st.session_state.df is None or len(st.session_state.indices) == 0:
+if st.session_state.df is None:
     st.info("Upload or load questions to begin. Required columns: " + ", ".join(REQUIRED))
     st.stop()
 
@@ -206,17 +367,16 @@ st.session_state.i = int(np.clip(st.session_state.i, 0, len(st.session_state.ind
 local_idx = st.session_state.indices[st.session_state.i]
 q = sub.loc[local_idx]
 
-# Header row: progress + chips
+# Progress
 answered = len(st.session_state.answers); total = len(st.session_state.indices)
 pct = int((answered/total)*100) if total else 0
 st.progress(min(pct/100, 1.0), text=f"Progress: {answered}/{total} answered • {pct}%")
 
-chip_row = []
-if q["Category"]:
-    chip_row.append(f"<span class='chip'>Category: {q['Category']}</span>")
-if q["Difficulty"]:
-    chip_row.append(f"<span class='chip'>Difficulty: {q['Difficulty']}</span>")
-st.markdown(" ".join(chip_row), unsafe_allow_html=True)
+# Chips
+chips = []
+if q["Category"]: chips.append(f"<span class='chip'>Category: {q['Category']}</span>")
+if q["Difficulty"]: chips.append(f"<span class='chip'>Difficulty: {q['Difficulty']}</span>")
+st.markdown(" ".join(chips), unsafe_allow_html=True)
 
 # Question card
 st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -225,6 +385,7 @@ st.markdown(f"**{q['Question']}**")
 
 choices = {"A": q["A"], "B": q["B"], "C": q["C"], "D": q["D"], "E": q["E"]}
 
+# Flag/Favorite
 c_top = st.columns([1,1,6])
 flagged = local_idx in st.session_state.flags
 faved = local_idx in st.session_state.favs
@@ -235,7 +396,7 @@ if c_top[1].button(("⭐ Unfavorite" if faved else "⭐ Favorite"), use_containe
     if faved: st.session_state.favs.remove(local_idx)
     else: st.session_state.favs.add(local_idx); persist_progress()
 
-# Answer UI
+# Answer input
 if st.session_state.review_mode:
     st.info("Review Mode is ON — answers are not recorded.")
     letter = None
@@ -260,12 +421,12 @@ if col[1].button("👁 Show explanation", use_container_width=True):
 if col[2].button("🙈 Hide explanation", use_container_width=True):
     st.session_state.show_expl = False
 
-# Explanation card
+# Explanation
 if st.session_state.show_expl or st.session_state.review_mode:
     st.markdown("<div class='card card-dim'>", unsafe_allow_html=True)
     st.markdown("**Explanation**")
     st.write(q["Explanation"])
-    if q["Reference"].lower().startswith(("http://","https://")):
+    if str(q["Reference"]).lower().startswith(("http://","https://")):
         st.markdown(f"[Reference]({q['Reference']})")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -276,9 +437,9 @@ if nav[0].button("⬅️ Previous", disabled=st.session_state.i==0, use_containe
 if nav[1].button("Next ➡️", disabled=st.session_state.i>=len(st.session_state.indices)-1, use_container_width=True):
     st.session_state.i = min(len(st.session_state.indices)-1, st.session_state.i+1); st.session_state.show_expl=False
 
-st.markdown("</div>", unsafe_allow_html=True)  # close question card
+st.markdown("</div>", unsafe_allow_html=True)
 
-# Performance by category
+# Performance
 with st.expander("📊 Performance by Category"):
     if st.session_state.answers:
         rows = []
@@ -292,4 +453,4 @@ with st.expander("📊 Performance by Category"):
     else:
         st.write("No graded attempts yet.")
 
-st.caption("Tip: Use the sidebar to filter topics, toggle shuffle, and export results. Progress autosaves locally.")
+st.caption("Tip: Official categories drive filters and warnings. Upload CSV/XLSX with the required headers.")
