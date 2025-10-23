@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import json, os
+import os, json
 from datetime import datetime
+from typing import List
 
 # =========================
-# OFFICIAL CATEGORY LIST
-# (kept in your chosen order)
+# OFFICIAL CATEGORY LIST (ordered)
 # =========================
 CATEGORIES_MASTER = [
 "Bronchoscopy",
@@ -133,7 +133,7 @@ CATEGORIES_MASTER = [
 ]
 
 # =========================
-# PAGE & STYLES
+# PAGE & THEME
 # =========================
 st.set_page_config(page_title="Question Bank", page_icon="🧠", layout="wide")
 CUSTOM_CSS = """
@@ -165,56 +165,62 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 REQUIRED = ["Question","A","B","C","D","E","Correct","Explanation","Reference","Category","Difficulty"]
 PROGRESS_FILE = "progress.json"
+DATA_DIR = "data"
 
 # =========================
 # HELPERS
 # =========================
 def _normalize_cat(s: str) -> str:
-    # normalize smart quotes/dashes and trim
     return (
-        s.replace("’", "'")
-         .replace("–", "-")
-         .replace("\u00A0", " ")  # non-breaking space -> space
-         .strip()
+        str(s).replace("’", "'")
+              .replace("–", "-")
+              .replace("\u00A0", " ")
+              .strip()
     )
 
-def load_dataframe(file):
-    # Load CSV/XLSX or sample
-    if file is None:
-        sample_path = os.path.join(os.path.dirname(__file__), "questions_sample.csv")
-        if os.path.exists(sample_path):
-            df = pd.read_csv(sample_path)
-        else:
-            return None
-    else:
-        name = getattr(file, "name", "")
-        if name.lower().endswith((".xlsx",".xls")):
-            df = pd.read_excel(file)
-        else:
-            df = pd.read_csv(file)
+@st.cache_data(show_spinner=False)
+def list_data_files(data_dir: str) -> List[str]:
+    if not os.path.isdir(data_dir):
+        return []
+    names = []
+    for f in os.listdir(data_dir):
+        if f.startswith("."): 
+            continue
+        if f.lower().endswith((".csv", ".xlsx", ".xls")):
+            names.append(f)
+    return sorted(names)
 
-    # Validate columns
+@st.cache_data(show_spinner=False)
+def load_one(path: str) -> pd.DataFrame:
+    p = os.path.join(DATA_DIR, path)
+    if path.lower().endswith((".xlsx",".xls")):
+        df = pd.read_excel(p)
+    else:
+        df = pd.read_csv(p)
+    # validate/clean
     missing = [c for c in REQUIRED if c not in df.columns]
     if missing:
-        st.error(f"Missing required columns: {missing}")
-        return None
-
-    # Clean types/spaces
+        raise ValueError(f"{path}: missing columns {missing}")
     df["Correct"] = df["Correct"].astype(str).str.strip().str.upper()
     for c in ["Question","A","B","C","D","E","Explanation","Reference","Category","Difficulty"]:
         df[c] = df[c].astype(str).fillna("").str.strip()
-
-    # Normalize categories for consistent matching
     df["Category"] = df["Category"].apply(_normalize_cat)
-
+    df["__sourcefile__"] = path
     return df
+
+@st.cache_data(show_spinner=False)
+def load_many(selected_files: List[str]) -> pd.DataFrame:
+    frames = [load_one(f) for f in selected_files]
+    if not frames:
+        return pd.DataFrame(columns=REQUIRED)
+    return pd.concat(frames, axis=0, ignore_index=True)
 
 def init_state():
     ss = st.session_state
     ss.setdefault("df", None)
     ss.setdefault("indices", [])
     ss.setdefault("i", 0)
-    ss.setdefault("answers", {})     # idx -> {choice,is_correct,timestamp}
+    ss.setdefault("answers", {})
     ss.setdefault("flags", set())
     ss.setdefault("favs", set())
     ss.setdefault("show_expl", False)
@@ -271,47 +277,53 @@ def load_progress():
             pass
 
 # =========================
-# SIDEBAR / LOADING
+# SIDEBAR (no upload)
 # =========================
 init_state()
-st.sidebar.title("⚙️ Controls")
+st.sidebar.title("📚 Repository Controls")
 
-uploaded = st.sidebar.file_uploader("Upload CSV or Excel", type=["csv","xlsx","xls"], help="Headers must match the sample.")
-if st.sidebar.button("Load / Reload", type="primary", use_container_width=True):
-    st.session_state.df = load_dataframe(uploaded)
-    if st.session_state.df is not None:
-        # Warn on non-standard categories
+files = list_data_files(DATA_DIR)
+if not files:
+    st.sidebar.error("No files found in the 'data/' folder.\nAdd CSV/XLSX files with the required headers.")
+    st.stop()
+
+st.sidebar.caption("These sets live in your repo → data/")
+combine_all = st.sidebar.toggle("Use ALL question sets", value=True)
+if combine_all:
+    selected_files = files
+else:
+    selected_files = st.sidebar.multiselect("Choose sets", files, default=files[:1])
+
+# Load/refresh button
+if st.sidebar.button("Load Repository Questions", type="primary", use_container_width=True):
+    st.session_state.df = load_many(selected_files)
+    if not st.session_state.df.empty:
+        # Warn about non-standard categories
         unknown = sorted(set(st.session_state.df["Category"].dropna()) - set(CATEGORIES_MASTER))
         if unknown:
-            st.warning(f"Unrecognized categories in your upload (check spelling/casing): {unknown}")
+            st.warning(f"Unrecognized categories in repository data (check spelling/casing): {unknown}")
         rebuild_indices(); persist_progress()
 
+# auto-load first time
 if st.session_state.df is None:
-    st.session_state.df = load_dataframe(uploaded)
-    if st.session_state.df is not None and not st.session_state.indices:
-        # Warn on non-standard categories
+    st.session_state.df = load_many(selected_files)
+    if not st.session_state.df.empty and not st.session_state.indices:
         unknown = sorted(set(st.session_state.df["Category"].dropna()) - set(CATEGORIES_MASTER))
         if unknown:
-            st.warning(f"Unrecognized categories in your upload (check spelling/casing): {unknown}")
+            st.warning(f"Unrecognized categories in repository data (check spelling/casing): {unknown}")
         load_progress(); rebuild_indices()
 
-if st.session_state.df is not None:
+if st.session_state.df is not None and not st.session_state.df.empty:
     df = st.session_state.df
 
-    # Build Category filter from MASTER order but only include categories present in the file
+    # Build filters (categories in MASTER order, but only those present in the current selection)
     present = set(df["Category"].dropna().unique().tolist())
     cats = [c for c in CATEGORIES_MASTER if c in present]
-
-    # Difficulty filter (from data)
     diffs = sorted(df["Difficulty"].dropna().unique().tolist())
 
     with st.sidebar.expander("Filters", expanded=True):
-        st.session_state.filters["Category"] = st.multiselect(
-            "Category", cats, default=st.session_state.filters.get("Category", [])
-        )
-        st.session_state.filters["Difficulty"] = st.multiselect(
-            "Difficulty", diffs, default=st.session_state.filters.get("Difficulty", [])
-        )
+        st.session_state.filters["Category"] = st.multiselect("Category", cats, default=st.session_state.filters.get("Category", []))
+        st.session_state.filters["Difficulty"] = st.multiselect("Difficulty", diffs, default=st.session_state.filters.get("Difficulty", []))
         st.session_state.shuffle = st.toggle("Shuffle questions", value=st.session_state.shuffle)
 
         c1, c2 = st.columns(2)
@@ -323,7 +335,7 @@ if st.session_state.df is not None:
     st.sidebar.markdown("---")
     st.session_state.review_mode = st.sidebar.toggle("📖 Review Mode (no grading)", value=st.session_state.review_mode)
 
-    # Export
+    # Export (still allowed—exports user results only)
     if st.sidebar.button("⬇️ Export results CSV", use_container_width=True):
         if st.session_state.answers:
             sub = apply_filters(df)
@@ -340,6 +352,7 @@ if st.session_state.df is not None:
                         "Timestamp": rec.get("timestamp",""),
                         "Category": sub.loc[idx, "Category"],
                         "Difficulty": sub.loc[idx, "Difficulty"],
+                        "__SourceFile__": sub.loc[idx, "__sourcefile__"] if "__sourcefile__" in sub.columns else ""
                     })
             if rows:
                 out = pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
@@ -350,11 +363,11 @@ if st.session_state.df is not None:
 # =========================
 # MAIN UI
 # =========================
-st.markdown("<h1 class='title'>🧠 Question Bank</h1>", unsafe_allow_html=True)
-st.caption("Clean UI • Explanations • Filters • Progress • Flags/Favorites • Official categories")
+st.markdown("<h1 class='title'>🧠 Question Bank (Repository)</h1>", unsafe_allow_html=True)
+st.caption("Read-only repository from your GitHub `data/` folder • Official categories • Filters • Progress • Flags/Favorites")
 
-if st.session_state.df is None:
-    st.info("Upload or load questions to begin. Required columns: " + ", ".join(REQUIRED))
+if st.session_state.df is None or st.session_state.df.empty:
+    st.info("No questions loaded. Add files to `data/` and click **Load Repository Questions**.")
     st.stop()
 
 df = st.session_state.df
@@ -376,6 +389,7 @@ st.progress(min(pct/100, 1.0), text=f"Progress: {answered}/{total} answered • 
 chips = []
 if q["Category"]: chips.append(f"<span class='chip'>Category: {q['Category']}</span>")
 if q["Difficulty"]: chips.append(f"<span class='chip'>Difficulty: {q['Difficulty']}</span>")
+if "__sourcefile__" in q and q["__sourcefile__"]: chips.append(f"<span class='chip'>Set: {q['__sourcefile__']}</span>")
 st.markdown(" ".join(chips), unsafe_allow_html=True)
 
 # Question card
@@ -439,7 +453,7 @@ if nav[1].button("Next ➡️", disabled=st.session_state.i>=len(st.session_stat
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Performance
+# Performance view
 with st.expander("📊 Performance by Category"):
     if st.session_state.answers:
         rows = []
@@ -453,4 +467,4 @@ with st.expander("📊 Performance by Category"):
     else:
         st.write("No graded attempts yet.")
 
-st.caption("Tip: Official categories drive filters and warnings. Upload CSV/XLSX with the required headers.")
+st.caption("Read-only repository mode • Add/update question sets in data/ and reload here.")
