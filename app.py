@@ -1,3 +1,5 @@
+# app.py  — CSV-ONLY Question Bank (Read-Only Repository Mode)
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -163,6 +165,9 @@ h1.title {font-weight: 800; letter-spacing:-0.02em;}
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
+# =========================
+# CONSTANTS
+# =========================
 REQUIRED = ["Question","A","B","C","D","E","Correct","Explanation","Reference","Category","Difficulty"]
 PROGRESS_FILE = "progress.json"
 DATA_DIR = "data"
@@ -180,30 +185,52 @@ def _normalize_cat(s: str) -> str:
 
 @st.cache_data(show_spinner=False)
 def list_data_files(data_dir: str) -> List[str]:
+    """CSV-only: return CSV files in data/"""
     if not os.path.isdir(data_dir):
         return []
     names = []
     for f in os.listdir(data_dir):
-        if f.startswith("."): 
+        if f.startswith("."):
             continue
-        if f.lower().endswith((".csv", ".xlsx", ".xls")):
+        if f.lower().endswith(".csv"):  # CSV ONLY
             names.append(f)
     return sorted(names)
 
 @st.cache_data(show_spinner=False)
 def load_one(path: str) -> pd.DataFrame:
+    """CSV-only robust loader with friendly validation."""
     p = os.path.join(DATA_DIR, path)
-    if path.lower().endswith((".xlsx",".xls")):
-        df = pd.read_excel(p)
-    else:
-        df = pd.read_csv(p)
-    # validate/clean
+
+    # Enforce CSV-only
+    if not path.lower().endswith(".csv"):
+        st.error(f"'{path}' is not a .csv. This app is CSV-only. Convert to CSV (UTF-8) and place it in 'data/'.")
+        return pd.DataFrame(columns=REQUIRED)
+
+    # Robust CSV read: handle UTF-8 BOM, keep strings, avoid NA coercion on answers
+    try:
+        df = pd.read_csv(
+            p,
+            encoding="utf-8-sig",
+            dtype=str,
+            keep_default_na=False,  # don't convert blanks to NaN
+            na_filter=False         # treat 'NA' literally (answers may be 'NA')
+        )
+        # Remove BOM from first header if present & trim header whitespace
+        df.columns = [c.replace("\ufeff", "").strip() for c in df.columns]
+    except Exception as e:
+        st.error(f"Failed to read CSV '{path}': {e}")
+        return pd.DataFrame(columns=REQUIRED)
+
+    # Validate required columns
     missing = [c for c in REQUIRED if c not in df.columns]
     if missing:
-        raise ValueError(f"{path}: missing columns {missing}")
+        st.error(f"{path}: missing columns {missing}. Required: {REQUIRED}")
+        return pd.DataFrame(columns=REQUIRED)
+
+    # Clean/normalize fields
     df["Correct"] = df["Correct"].astype(str).str.strip().str.upper()
     for c in ["Question","A","B","C","D","E","Explanation","Reference","Category","Difficulty"]:
-        df[c] = df[c].astype(str).fillna("").str.strip()
+        df[c] = df[c].astype(str).str.strip()
     df["Category"] = df["Category"].apply(_normalize_cat)
     df["__sourcefile__"] = path
     return df
@@ -211,6 +238,7 @@ def load_one(path: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def load_many(selected_files: List[str]) -> pd.DataFrame:
     frames = [load_one(f) for f in selected_files]
+    frames = [f for f in frames if not f.empty]
     if not frames:
         return pd.DataFrame(columns=REQUIRED)
     return pd.concat(frames, axis=0, ignore_index=True)
@@ -277,28 +305,24 @@ def load_progress():
             pass
 
 # =========================
-# SIDEBAR (no upload)
+# SIDEBAR (Repository mode, CSV-only)
 # =========================
 init_state()
 st.sidebar.title("📚 Repository Controls")
 
 files = list_data_files(DATA_DIR)
 if not files:
-    st.sidebar.error("No files found in the 'data/' folder.\nAdd CSV/XLSX files with the required headers.")
+    st.sidebar.error("No files found in the 'data/' folder.\nAdd CSV files with headers:\nQuestion,A,B,C,D,E,Correct,Explanation,Reference,Category,Difficulty")
     st.stop()
 
-st.sidebar.caption("These sets live in your repo → data/")
+st.sidebar.caption("These CSV sets live in your repo → data/")
 combine_all = st.sidebar.toggle("Use ALL question sets", value=True)
-if combine_all:
-    selected_files = files
-else:
-    selected_files = st.sidebar.multiselect("Choose sets", files, default=files[:1])
+selected_files = files if combine_all else st.sidebar.multiselect("Choose sets", files, default=files[:1])
 
 # Load/refresh button
 if st.sidebar.button("Load Repository Questions", type="primary", use_container_width=True):
     st.session_state.df = load_many(selected_files)
     if not st.session_state.df.empty:
-        # Warn about non-standard categories
         unknown = sorted(set(st.session_state.df["Category"].dropna()) - set(CATEGORIES_MASTER))
         if unknown:
             st.warning(f"Unrecognized categories in repository data (check spelling/casing): {unknown}")
@@ -316,7 +340,7 @@ if st.session_state.df is None:
 if st.session_state.df is not None and not st.session_state.df.empty:
     df = st.session_state.df
 
-    # Build filters (categories in MASTER order, but only those present in the current selection)
+    # Build filters (categories in MASTER order; only those present in current dataset)
     present = set(df["Category"].dropna().unique().tolist())
     cats = [c for c in CATEGORIES_MASTER if c in present]
     diffs = sorted(df["Difficulty"].dropna().unique().tolist())
@@ -335,7 +359,7 @@ if st.session_state.df is not None and not st.session_state.df.empty:
     st.sidebar.markdown("---")
     st.session_state.review_mode = st.sidebar.toggle("📖 Review Mode (no grading)", value=st.session_state.review_mode)
 
-    # Export (still allowed—exports user results only)
+    # Export (user results only; repository remains read-only)
     if st.sidebar.button("⬇️ Export results CSV", use_container_width=True):
         if st.session_state.answers:
             sub = apply_filters(df)
@@ -364,10 +388,10 @@ if st.session_state.df is not None and not st.session_state.df.empty:
 # MAIN UI
 # =========================
 st.markdown("<h1 class='title'>🧠 Question Bank (Repository)</h1>", unsafe_allow_html=True)
-st.caption("Read-only repository from your GitHub `data/` folder • Official categories • Filters • Progress • Flags/Favorites")
+st.caption("Read-only repository from your GitHub `data/` folder • CSV-only • Official categories • Filters • Progress • Flags/Favorites")
 
 if st.session_state.df is None or st.session_state.df.empty:
-    st.info("No questions loaded. Add files to `data/` and click **Load Repository Questions**.")
+    st.info("No questions loaded. Add CSV files to `data/` and click **Load Repository Questions**.")
     st.stop()
 
 df = st.session_state.df
@@ -376,12 +400,14 @@ if len(sub) == 0:
     st.warning("No questions match the current filters.")
     st.stop()
 
-st.session_state.i = int(np.clip(st.session_state.i, 0, len(st.session_state.indices)-1))
+# Current index & question
+st.session_state.i = int(np.clip(st.session_state.i, 0, len(st.session_state.indices) - 1))
 local_idx = st.session_state.indices[st.session_state.i]
 q = sub.loc[local_idx]
 
 # Progress
-answered = len(st.session_state.answers); total = len(st.session_state.indices)
+answered = len(st.session_state.answers)
+total = len(st.session_state.indices)
 pct = int((answered/total)*100) if total else 0
 st.progress(min(pct/100, 1.0), text=f"Progress: {answered}/{total} answered • {pct}%")
 
@@ -416,7 +442,7 @@ if st.session_state.review_mode:
     letter = None
 else:
     default_letter = st.session_state.answers.get(local_idx, {}).get("choice")
-    options = [f"{k}. {v}" for k,v in choices.items()]
+    options = [f"{k}. {v}" for k, v in choices.items()]
     start_index = list(choices.keys()).index(default_letter) if default_letter in choices else 0
     pick = st.radio("Choose one:", options, index=start_index)
     letter = pick.split(".")[0]
@@ -425,7 +451,11 @@ else:
 col = st.columns([1,1,1,6])
 if col[0].button("✅ Submit", disabled=st.session_state.review_mode, use_container_width=True):
     is_correct = (letter == q["Correct"])
-    st.session_state.answers[local_idx] = {"choice": letter, "is_correct": bool(is_correct), "timestamp": datetime.now().isoformat()}
+    st.session_state.answers[local_idx] = {
+        "choice": letter,
+        "is_correct": bool(is_correct),
+        "timestamp": datetime.now().isoformat()
+    }
     st.session_state.show_expl = True
     if is_correct: st.success("Correct ✅")
     else: st.error(f"Incorrect ❌  •  Correct answer: **{q['Correct']}**")
@@ -461,10 +491,12 @@ with st.expander("📊 Performance by Category"):
             if idx < len(sub):
                 rows.append((sub.loc[idx, "Category"], 1 if rec.get("is_correct") else 0))
         if rows:
-            perf = pd.DataFrame(rows, columns=["Category","Correct"]).groupby("Category").agg(Attempts=("Correct","count"), Correct=("Correct","sum"))
+            perf = (pd.DataFrame(rows, columns=["Category","Correct"])
+                    .groupby("Category")
+                    .agg(Attempts=("Correct","count"), Correct=("Correct","sum")))
             perf["Accuracy"] = (perf["Correct"] / perf["Attempts"] * 100).round(1)
             st.dataframe(perf, use_container_width=True)
     else:
         st.write("No graded attempts yet.")
 
-st.caption("Read-only repository mode • Add/update question sets in data/ and reload here.")
+st.caption("Read-only repository mode • CSV-only • Add/update question sets in data/ and reload here.")
